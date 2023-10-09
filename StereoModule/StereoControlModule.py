@@ -185,6 +185,40 @@ class StereoControlModuleLogic(ScriptedLoadableModuleLogic):
             "ModifiedEvent", self._buttonCallback)
         observerId = self.lookupNode.AddObserver(
             slicer.vtkMRMLTransformNode.TransformModifiedEvent, self._callback)
+        
+    def setupWithoutHardware(self):
+                # Sitting transforms are used to visualize the camera positions in the 3D view
+        self.scale_factor = 4
+
+        if not slicer.mrmlScene.GetFirstNodeByName("leftCameraSittingTransform"):
+            self.leftCameraSittingTransform = slicer.vtkMRMLLinearTransformNode()
+            self.leftCameraSittingTransform.SetName("leftCameraSittingTransform")
+            slicer.mrmlScene.AddNode(self.leftCameraSittingTransform)
+
+        if not slicer.mrmlScene.GetFirstNodeByName("rightCameraSittingTransform"):
+            self.rightCameraSittingTransform = slicer.vtkMRMLLinearTransformNode()
+            self.rightCameraSittingTransform.SetName("rightCameraSittingTransform")
+            slicer.mrmlScene.AddNode(self.rightCameraSittingTransform)
+
+        self.moveCamera = False
+        self.startFlag = False
+
+        transformNode = slicer.mrmlScene.GetFirstNodeByName('LinearTransform')
+        vtkTransform = transformNode.GetTransformToParent()
+        observerTag = vtkTransform.AddObserver(vtk.vtkCommand.ModifiedEvent, self.onTransformModified)
+
+        self.currentControllerTransform = vtk.vtkMatrix4x4()
+
+    def onTransformModified(self, caller, event):
+        print("Transform modified!")
+        caller.GetMatrix(self.nextControllerTransform)
+        displacement, positionDisplacementVector = findDisplacementTransform(
+            self.currentControllerTransform, self.nextControllerTransform, self.scale_factor)
+        self.displaceCamera(displacement, positionDisplacementVector)
+        # copy contents of nextControllerTransform into currentControllerTransform they are vtkMatrix4x4 objects
+        self.currentControllerTransform.DeepCopy(self.nextControllerTransform)
+        # self.lookupNode.GetMatrixTransformToParent(self.currentControllerTransform)
+
 
     def ResetCameraPosition(self, xDisp = 0, yDisp = 0, zDisp = 0):
         offset = self.offset
@@ -341,15 +375,19 @@ class StereoControlModuleWidget(ScriptedLoadableModuleWidget):
         """
         The function `onDemoButtonClick` creates a custom layout window, sets up a stereo control module
         logic, defines an offset, resets the camera position, and displaces the camera.
-        """
+        """     
         if self.window:
             self.window.close()
 
         self.window = createCustomLayout([100,100],[1280*2,720])
         self.window.show()
 
+        cylinderModel, cylinderTransform = createInteractableCylinder()
+        # cylinderModel.GetDisplayNode().SetVisibility(1)
+
+
         self.logic = StereoControlModuleLogic()
-        self.logic.setup()
+        self.logic.setupWithoutHardware()
         self.logic.defineOffset(-5, 0, 0)
         self.logic.ResetCameraPosition(0,-200,0)
         

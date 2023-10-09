@@ -123,3 +123,31 @@ def interpolateVTKMatrix(vtkMatrix, t):
             resultVTKMatrix.SetElement(i, j, rTransformed[i, j])
 
     return resultVTKMatrix
+
+def createInteractableCylinder():
+    cylinderSource = vtk.vtkCylinderSource()
+    cylinderSource.SetHeight(20)        # set height as per requirement
+    cylinderSource.SetRadius(10)        # set radius as per requirement
+    cylinderSource.SetResolution(100)   # set resolution as per requirement
+    cylinderSource.Update()
+
+    cylinderModel = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLModelNode', 'CylinderModel')
+    cylinderModel.SetAndObservePolyData(cylinderSource.GetOutput())
+
+    # Step 2: Create a Transform
+    transform = slicer.vtkMRMLLinearTransformNode()
+    slicer.mrmlScene.AddNode(transform)
+
+    matrix = vtk.vtkMatrix4x4()
+    # Modify the matrix values as per your requirement. This is just an example.
+    matrix.Identity()  # start with an identity matrix
+    matrix.SetElement(0, 3, 100)  # translation along X
+    matrix.SetElement(1, 3, 100)  # translation along Y
+    matrix.SetElement(2, 3, 100)   # translation along Z
+
+    transform.SetMatrixTransformToParent(matrix)
+
+    # Step 3: Apply the Transform to the Cylinder Model
+    cylinderModel.SetAndObserveTransformNodeID(transform.GetID())    
+
+    return cylinderModel, transform
