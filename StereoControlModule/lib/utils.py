@@ -4,11 +4,115 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R, Slerp
 import qt
 
-try:
-    import yaml
-except:
-    pip_install('pyyaml')
-    import yaml
+class MonoCamera:
+
+    def __init__(self, cameraMRMLNode, description=""):
+        # verify that cameraObject is a vtkMRMLCameraNode
+        if not isinstance(cameraMRMLNode, vtk.vtkMRMLCameraNode):
+            raise TypeError("cameraObject must be vtkMRMLCameraNode object")
+        self.cameraNode = cameraMRMLNode
+        self.description = description
+
+    def setBaselineOffset(self, baselineOffset):
+        self.baselineOffset = baselineOffset
+        self.matrixOffsetCamera = vtk.vtkMatrix4x4()
+
+        self.matrixOffsetCamera.SetElement(0, 3, baselineOffset / 2)
+        self.matrixOffsetCamera.SetElement(1, 3, 0)
+        self.matrixOffsetCamera.SetElement(2, 3, 0)
+
+    def extractPositionFromTransformMatrix(self, transformMatrix):
+        return [transformMatrix.GetElement(i, 3) for i in range(3)]
+    
+
+    def GetCameraTransform(self):
+        """
+        The function `GetCameraTransform` calculates the camera transform matrix and magnitude based on the
+        position, focal point, and view up vectors of a camera node. This is required as 3D Slicer does not
+        provide a function to get the camera transform matrix directly. 
+
+        Z is View Up
+        Y is Focal Direction
+        X is Left to Right
+        
+        :param cameraNode: The `cameraNode` parameter is an object representing a camera in a 3D scene. It
+        contains information about the camera's position, focal point, and view up vector
+        :return: the camera transform matrix and the magnitude of the focal displacement.
+        """
+        position = self.cameraNode.GetPosition()
+        focalPoint = self.cameraNode.GetFocalPoint()
+        viewUp = self.cameraNode.GetViewUp()
+
+        focalDisplacement = np.array(focalPoint) - np.array(position)
+        self.magnitude = np.linalg.norm(focalDisplacement)
+
+        zz = viewUp
+        zz /= np.linalg.norm(zz)  # Normalize
+
+        yy = focalDisplacement
+        yy /= np.linalg.norm(yy)  # Normalize
+
+        xx = np.cross(yy, zz)
+        xx /= np.linalg.norm(xx)  # Normalize
+
+        self.cameraMatrix = vtk.vtkMatrix4x4()
+        self.cameraMatrix.Identity()
+        for i in range(3):
+            self.cameraMatrix.SetElement(i, 0, xx[i])
+            self.cameraMatrix.SetElement(i, 1, yy[i])
+            self.cameraMatrix.SetElement(i, 2, zz[i])
+            self.cameraMatrix.SetElement(i, 3, position[i])
+
+        self.cameraPosition = self.extractPositionFromTransformMatrix(self.cameraMatrix)
+        self.cameraRotation4x4 = vtk.vtkMatrix4x4()
+        self.cameraMatrix.DeepCopy(self.cameraRotation4x4)
+        for i in range(3):
+            self.cameraRotation4x4.SetElement(i, 3, 0)
+
+        return self.cameraMatrix, self.magnitude, self.cameraPosition, self.cameraRotation4x4
+
+class StereoCamera:
+    
+    def __init__(self, cameraLeft, cameraRight):
+        
+        # check if camera1 and camera2 are MonoCamera objects
+        if isinstance(cameraLeft, MonoCamera) and isinstance(cameraRight, MonoCamera):
+            self.cameraLeft = cameraLeft
+            self.cameraRight = cameraRight
+        elif isinstance(cameraLeft, vtk.vtkMRMLCameraNode) and isinstance(cameraRight, vtk.vtkMRMLCameraNode):
+            self.cameraLeft = MonoCamera(cameraLeft)
+            self.cameraRight = MonoCamera(cameraRight)
+        print("StereoCamera: init")
+
+    def setBaseline(self, baseline):
+        leftOffset = -1 * baseline / 2
+        rightOffset = baseline / 2
+
+        self.cameraLeft.setBaselineOffset(leftOffset)
+        self.cameraRight.setBaselineOffset(rightOffset)
+
+    def getCentralCameraMatrix(self):
+        # This represents the effective central camera which is the middle of the two cameras
+        matrixLeft, magnitudeLeft, positionLeft, rotationLeft = self.cameraLeft.GetCameraTransform()
+        matrixRight, magnitudeRight, positionRight, rotationRight = self.cameraRight.GetCameraTransform()
+
+        # Calculate the central camera matrix
+        matrixCentral = vtk.vtkMatrix4x4()
+        matrixCentral.DeepCopy(matrixLeft)
+
+        # Calculate the central camera position
+        positionCentral = [(positionLeft[i] + positionRight[i]) / 2 for i in range(3)]
+
+        # remember the magnitudes for later
+        self.magnitudeLeft = magnitudeLeft
+        self.magnitudeRight = magnitudeRight
+
+        return positionCentral, matrixCentral
+
+
+
+def test_stereo_camera():
+    camera = StereoCamera(MonoCamera(), MonoCamera())
 
 def createCustomLayout(position, size):
     """
@@ -40,22 +144,22 @@ def createCustomLayout(position, size):
         """
     # Register the custom layout with the application layout manager
     layoutManager = slicer.app.layoutManager()
-    customLayoutId = 100  # an arbitrary ID number for the custom layout
+    customLayoutId = 100  # an arbitrary ID number for the custom layout # TODO: make it max plus one, not arbitrary hundred
     layoutManager.layoutLogic().GetLayoutNode().AddLayoutDescription(customLayoutId, THREE_3D_LAYOUT)
 
     # Set the application layout to the custom layout
     layoutManager.setLayout(customLayoutId)
 
     # Extract the 3D widgets for stereo cameras
-    threeDWidget1 = layoutManager.threeDWidget(0)
-    threeDWidget2 = layoutManager.threeDWidget(1)
+    threeDWidgetLeft = layoutManager.threeDWidget(0) # TODO: retrieve them by name or by some other tag 
+    threeDWidgetRight = layoutManager.threeDWidget(1)
 
     # Create a new window for the stereo cameras
     popupWindow = qt.QWidget()
     popupWindow.setWindowTitle("Stereo Cameras")
     popupWindow.setLayout(qt.QHBoxLayout())
-    popupWindow.layout().addWidget(threeDWidget1)
-    popupWindow.layout().addWidget(threeDWidget2)
+    popupWindow.layout().addWidget(threeDWidgetLeft)
+    popupWindow.layout().addWidget(threeDWidgetRight)
     popupWindow.show()
 
     popupWindow.move(100, 100)
