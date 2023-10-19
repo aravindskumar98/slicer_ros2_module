@@ -18,19 +18,20 @@ class MonoCamera:
 
         self.cameraNode = cameraMRMLNode
         self.description = description
+        self.sittingTransform = None
 
     def addSittingTransform(self, sittingTransform):
         self.sittingTransform = sittingTransform
 
-    def SetBaselineOffset(self, baselineOffset):
+    def SetBaselineOffset(self, baselineOffset):  # TODO: this needs to go into stereo camera 
         self.baselineOffset = baselineOffset
         self.matrixOffsetCamera = vtk.vtkMatrix4x4()
 
-        self.matrixOffsetCamera.SetElement(0, 3, baselineOffset / 2)
+        self.matrixOffsetCamera.SetElement(0, 3, baselineOffset / 2.0)
         self.matrixOffsetCamera.SetElement(1, 3, 0)
         self.matrixOffsetCamera.SetElement(2, 3, 0)
 
-    def extractPositionFromTransformMatrix(self, transformMatrix):
+    def extractPositionFromTransformMatrix(self, transformMatrix):   # TODO: use transform everywhere instead of matrix
         return [transformMatrix.GetElement(i, 3) for i in range(3)]
     
 
@@ -85,7 +86,7 @@ class MonoCamera:
 
         cameraMatrix = vtk.vtkMatrix4x4()
         vtk.vtkMatrix4x4.Multiply4x4(
-            centralCameraMatrix, self.matrixOffsetCamera, cameraMatrix)
+            centralCameraMatrix, self.matrixOffsetCamera, cameraMatrix) #TODO: this needs to go in the stereo camera
         
         position = [cameraMatrix.GetElement(i, 3) for i in range(3)]
 
@@ -100,12 +101,13 @@ class MonoCamera:
         self.cameraNode.SetViewUp(viewUp)
 
         # Apply the sitting transform
-        self.sittingTransform.SetMatrixTransformToParent(cameraMatrix)
+        if self.sittingTransform is not None:
+            self.sittingTransform.SetMatrixTransformToParent(cameraMatrix)
 
     def SetAbsoluteCameraPosition(self, xDisp, yDisp, zDisp):
-        self.cameraNode.SetPosition(xDisp + self.baselineOffset/2 , yDisp, zDisp)
-        self.cameraNode.SetFocalPoint(0, 0, 0)
-        self.cameraNode.SetViewUp(0, 0, 1)
+        self.cameraNode.SetPosition(xDisp + self.baselineOffset/2.0 , yDisp, zDisp)
+        self.cameraNode.SetFocalPoint(0.0, 0.0, 0.0)
+        self.cameraNode.SetViewUp(0.0, 0.0, 1.0)
 
 class StereoCamera:
     
@@ -118,15 +120,14 @@ class StereoCamera:
         else:
             self.cameraLeft = MonoCamera(cameraLeft)
             self.cameraRight = MonoCamera(cameraRight)
-        print("StereoCamera: init")
 
-    def addSittingTransforms(self, sittingTransformLeft, sittingTransformRight):
+    def addSittingTransforms(self, sittingTransformLeft, sittingTransformRight): #TODO: Change to visual transform
         self.cameraLeft.addSittingTransform(sittingTransformLeft)
         self.cameraRight.addSittingTransform(sittingTransformRight)
 
     def SetBaseline(self, baseline):
-        leftOffset = -1 * baseline / 2
-        rightOffset = baseline / 2
+        leftOffset = -1 * baseline / 2.0
+        rightOffset = baseline / 2.0
 
         self.cameraLeft.SetBaselineOffset(leftOffset)
         self.cameraRight.SetBaselineOffset(rightOffset)
@@ -141,28 +142,25 @@ class StereoCamera:
         matrixCentral.DeepCopy(matrixLeft)
 
         # Calculate the central camera position
-        positionCentral = [(positionLeft[i] + positionRight[i]) / 2 for i in range(3)]
+        positionCentral = [(positionLeft[i] + positionRight[i]) / 2.0 for i in range(3)] # TODO: take average of the two matrices instead
 
         # remember the magnitudes for later
         self.magnitudeLeft = magnitudeLeft
         self.magnitudeRight = magnitudeRight
 
-        return positionCentral, matrixCentral
+        return positionCentral, matrixCentral # TODO: either a 4x4 (preferred) |OR| a 3x3 matrix and a vectir
     
-    def SetCentralCameraTransform(self, matrixCentral):
+    def SetCentralCameraTransform(self, matrixCentral): # TODO: get rid of central in the naming 
         # Set the central camera position
         self.cameraLeft.SetCameraTransform(matrixCentral, self.magnitudeLeft)
         self.cameraRight.SetCameraTransform(matrixCentral, self.magnitudeRight)
 
-    def SetAbsoluteCameraPosition(self, xDisp, yDisp, zDisp):
+    def SetAbsoluteCameraPosition(self, xDisp, yDisp, zDisp): # TODO: remove absolute from the naming. It makes the other Set feel relative
         # Set the central camera position
-        self.cameraLeft.SetAbsoluteCameraPosition(xDisp, yDisp, zDisp)
+        # this is equivalent to using a transform with identity rotation and x,y,z displacements
+        self.cameraLeft.SetAbsoluteCameraPosition(xDisp, yDisp, zDisp) 
         self.cameraRight.SetAbsoluteCameraPosition(xDisp, yDisp, zDisp)
 
-
-
-def test_stereo_camera():
-    camera = StereoCamera(MonoCamera(), MonoCamera())
 
 def createCustomLayout(position, size):
     """

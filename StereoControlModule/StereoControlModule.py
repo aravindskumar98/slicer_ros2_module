@@ -132,7 +132,7 @@ class StereoControlModuleLogic(ScriptedLoadableModuleLogic):
             slicer.vtkMRMLTransformNode.TransformModifiedEvent, self._callback)
         
     def setupWithoutHardware(self):
-                # Sitting transforms are used to visualize the camera positions in the 3D view
+        # Sitting transforms are used to visualize the camera positions in the 3D view
         self.scale_factor = 4
 
         if not slicer.mrmlScene.GetFirstNodeByName("leftCameraSittingTransform"):
@@ -165,10 +165,9 @@ class StereoControlModuleLogic(ScriptedLoadableModuleLogic):
         self.displaceCameraV2(displacement, positionDisplacementVector)
         # copy contents of nextControllerTransform into currentControllerTransform they are vtkMatrix4x4 objects
         self.currentControllerTransform.DeepCopy(self.nextControllerTransform)
-        # self.lookupNode.GetMatrixTransformToParent(self.currentControllerTransform)
 
 
-    def SetAbsoluteCameraPosition(self, xDisp = 0, yDisp = 0, zDisp = 0):
+    def SetAbsoluteCameraPosition(self, xDisp = 0.0, yDisp = 0.0, zDisp = 0.0):
         self.stereoCamera.SetAbsoluteCameraPosition(xDisp, yDisp, zDisp)
 
     def _buttonCallback(self, caller, event):
