@@ -4,16 +4,25 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R, Slerp
 import qt
 
+
+def helper_print_matrix(matrix):
+    for i in range(4):
+        for j in range(4):
+            print(f"{matrix.GetElement(i,j):.2f}", end = " ")
+        print()
+
 class MonoCamera:
 
     def __init__(self, cameraMRMLNode, description=""):
-        # verify that cameraObject is a vtkMRMLCameraNode
-        if not isinstance(cameraMRMLNode, vtk.vtkMRMLCameraNode):
-            raise TypeError("cameraObject must be vtkMRMLCameraNode object")
+        # TODO verify that cameraObject is a vtkMRMLCameraNode
+
         self.cameraNode = cameraMRMLNode
         self.description = description
 
-    def setBaselineOffset(self, baselineOffset):
+    def addSittingTransform(self, sittingTransform):
+        self.sittingTransform = sittingTransform
+
+    def SetBaselineOffset(self, baselineOffset):
         self.baselineOffset = baselineOffset
         self.matrixOffsetCamera = vtk.vtkMatrix4x4()
 
@@ -64,12 +73,39 @@ class MonoCamera:
             self.cameraMatrix.SetElement(i, 3, position[i])
 
         self.cameraPosition = self.extractPositionFromTransformMatrix(self.cameraMatrix)
+
         self.cameraRotation4x4 = vtk.vtkMatrix4x4()
-        self.cameraMatrix.DeepCopy(self.cameraRotation4x4)
-        for i in range(3):
-            self.cameraRotation4x4.SetElement(i, 3, 0)
+        # self.cameraMatrix.DeepCopy(self.cameraRotation4x4)
+        # for i in range(3):
+        #     self.cameraRotation4x4.SetElement(i, 3, 0)
 
         return self.cameraMatrix, self.magnitude, self.cameraPosition, self.cameraRotation4x4
+    
+    def SetCameraTransform(self, centralCameraMatrix, magnitude):
+
+        cameraMatrix = vtk.vtkMatrix4x4()
+        vtk.vtkMatrix4x4.Multiply4x4(
+            centralCameraMatrix, self.matrixOffsetCamera, cameraMatrix)
+        
+        position = [cameraMatrix.GetElement(i, 3) for i in range(3)]
+
+        yy = [cameraMatrix.GetElement(i, 1) for i in range(3)]
+        focalDisplacement = np.array(yy) * magnitude
+        focalPoint = np.array(position) + focalDisplacement
+
+        viewUp = [cameraMatrix.GetElement(i, 2) for i in range(3)]
+
+        self.cameraNode.SetPosition(position)
+        self.cameraNode.SetFocalPoint(focalPoint)
+        self.cameraNode.SetViewUp(viewUp)
+
+        # Apply the sitting transform
+        self.sittingTransform.SetMatrixTransformToParent(cameraMatrix)
+
+    def SetAbsoluteCameraPosition(self, xDisp, yDisp, zDisp):
+        self.cameraNode.SetPosition(xDisp + self.baselineOffset/2 , yDisp, zDisp)
+        self.cameraNode.SetFocalPoint(0, 0, 0)
+        self.cameraNode.SetViewUp(0, 0, 1)
 
 class StereoCamera:
     
@@ -79,19 +115,23 @@ class StereoCamera:
         if isinstance(cameraLeft, MonoCamera) and isinstance(cameraRight, MonoCamera):
             self.cameraLeft = cameraLeft
             self.cameraRight = cameraRight
-        elif isinstance(cameraLeft, vtk.vtkMRMLCameraNode) and isinstance(cameraRight, vtk.vtkMRMLCameraNode):
+        else:
             self.cameraLeft = MonoCamera(cameraLeft)
             self.cameraRight = MonoCamera(cameraRight)
         print("StereoCamera: init")
 
-    def setBaseline(self, baseline):
+    def addSittingTransforms(self, sittingTransformLeft, sittingTransformRight):
+        self.cameraLeft.addSittingTransform(sittingTransformLeft)
+        self.cameraRight.addSittingTransform(sittingTransformRight)
+
+    def SetBaseline(self, baseline):
         leftOffset = -1 * baseline / 2
         rightOffset = baseline / 2
 
-        self.cameraLeft.setBaselineOffset(leftOffset)
-        self.cameraRight.setBaselineOffset(rightOffset)
+        self.cameraLeft.SetBaselineOffset(leftOffset)
+        self.cameraRight.SetBaselineOffset(rightOffset)
 
-    def getCentralCameraMatrix(self):
+    def GetCentralCameraPositionAndTransform(self):
         # This represents the effective central camera which is the middle of the two cameras
         matrixLeft, magnitudeLeft, positionLeft, rotationLeft = self.cameraLeft.GetCameraTransform()
         matrixRight, magnitudeRight, positionRight, rotationRight = self.cameraRight.GetCameraTransform()
@@ -108,6 +148,16 @@ class StereoCamera:
         self.magnitudeRight = magnitudeRight
 
         return positionCentral, matrixCentral
+    
+    def SetCentralCameraTransform(self, matrixCentral):
+        # Set the central camera position
+        self.cameraLeft.SetCameraTransform(matrixCentral, self.magnitudeLeft)
+        self.cameraRight.SetCameraTransform(matrixCentral, self.magnitudeRight)
+
+    def SetAbsoluteCameraPosition(self, xDisp, yDisp, zDisp):
+        # Set the central camera position
+        self.cameraLeft.SetAbsoluteCameraPosition(xDisp, yDisp, zDisp)
+        self.cameraRight.SetAbsoluteCameraPosition(xDisp, yDisp, zDisp)
 
 
 
