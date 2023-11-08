@@ -8,6 +8,28 @@
 
 6. **User-defined Callbacks**: Users should be able to define callback functions that will handle service responses.
 
+### Questions
+
+1. Keep connection alive? Check that the server is alive. Before sending out a request.
+2. We assume that the answer will be provided as a callback/events. It is for the users to attach a callback to the event. (This would be adding an observer?)
+3. If there is already a request pending, respond with a false.
+4. instead of spin future thing, do a wait or something.
+5. SendRequest function needs to be created.
+6. Replace Subscriber with Service and figrue out what stays and what does not.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ### Potential Signature for ROS2 Services in MRML 
 The signature for creating and using a ROS2 service in the MRML context would likely mirror the pattern established by publishers and subscribers. Here's a potential C++ class method signature for creating a service:
